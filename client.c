@@ -3,6 +3,7 @@
 #include <fcntl.h> 
 #include <libgen.h>
 
+// char mapping[10] = {"a","b"};
 
 // using namespace std;
 struct client_context{
@@ -18,6 +19,20 @@ struct client_context{
     uint32_t peer_rkey;
 };
 
+void mapping(enum rdma_cm_event_type type){
+    if(type == RDMA_CM_EVENT_CONNECT_RESPONSE)
+      printf("connect response\n");
+    if(type == RDMA_CM_EVENT_CONNECT_ERROR)
+      printf("connect error\n");
+    if(type == RDMA_CM_EVENT_UNREACHABLE)
+  	  printf("unreachable\n");
+    if(type == RDMA_CM_EVENT_REJECTED)
+      printf("rejected\n");
+    if(type == RDMA_CM_EVENT_ESTABLISHED)
+      printf("established\n");
+    if(type == RDMA_CM_EVENT_DISCONNECTED)
+      printf("disconnected\n");
+}
 
 const size_t BUFFER_SIZE = 10 * 1024 * 1024;
 
@@ -92,13 +107,13 @@ static void onCompletion(struct ibv_wc *wc)
       ctx->peer_addr = ctx->msg->data.addr;
       ctx->peer_rkey = ctx->msg->data.rkey;
 
-      // cout << "received MR, sending file name\n" << endl;
+      printf("received MR, sending file name\n");
       sendFileName(id);
     } else if (ctx->msg->type == MSG_READY) {
-      // cout << "received READY, sending chunk\n" << endl;
+      printf ("received READY, sending chunk\n" );
       sendNextChunk(id);
     } else if (ctx->msg->type == MSG_DONE) {
-      // cout << "received DONE, disconnecting\n" << endl;
+      printf("received DONE, disconnecting\n");
       rdma_disconnect(id);
       return;
     }
@@ -109,7 +124,7 @@ static void onCompletion(struct ibv_wc *wc)
 
 void postReceiveRequest(struct rdma_cm_id *id){
 
-    printf("------------- calling post rr -------------- \n");
+    printf("------------------------------ calling post rr -------------- \n");
     struct client_context *c_ctx = (struct client_context *)id->context;
     // struct connection *conn = c_ctx->conn;
     struct ibv_recv_wr wr, *bad_wr = NULL;
@@ -125,13 +140,13 @@ void postReceiveRequest(struct rdma_cm_id *id){
     sge.length = sizeof(*c_ctx->msg);
     sge.lkey = c_ctx->msg_mr->lkey;
 
-    printf("------------- calling ibv_post_recv -------------- \n");
+    // printf("------------- calling ibv_post_recv -------------- \n");
     ibv_post_recv(id->qp, &wr, &bad_wr);
-    printf("------------- posted recv ------------- \n");
+    // printf("------------- posted recv ------------- \n");
 }
 
 void registerMemory(struct rdma_cm_id *id){
-  printf("-------------  callin register memory -------------- \n");
+  // printf("-------------  callin register memory -------------- \n");
     struct client_context *c_ctx = (struct client_context *)id->context;
     // struct connection *conn = c_ctx->conn;
 
@@ -141,55 +156,17 @@ void registerMemory(struct rdma_cm_id *id){
     posix_memalign((void **)&c_ctx->msg, sysconf(_SC_PAGESIZE), sizeof(struct message));
     c_ctx->msg_mr = ibv_reg_mr(id->pd, c_ctx->msg, sizeof(struct message), IBV_ACCESS_LOCAL_WRITE);
 
-    printf("------------- memory registered -------------- \n");
+    // printf("------------- memory registered -------------- \n");
 }
-
-static void post_receive(struct rdma_cm_id *id)
-{
-  struct client_context *ctx = (struct client_context *)id->context;
-
-  struct ibv_recv_wr wr, *bad_wr = NULL;
-  struct ibv_sge sge;
-
-  memset(&wr, 0, sizeof(wr));
-
-  wr.wr_id = (uintptr_t)id;
-  wr.sg_list = &sge;
-  wr.num_sge = 1;
-
-  sge.addr = (uintptr_t)ctx->msg;
-  sge.length = sizeof(*ctx->msg);
-  sge.lkey = ctx->msg_mr->lkey;
-
-  printf("------------- calling post recv -------------- \n");
-  ibv_post_recv(id->qp, &wr, &bad_wr);
-  printf("------------- returned from post_recv -------------- \n");
-}
-
 
 
 int onConnectionRequest(struct rdma_cm_id *id){
-    
-    // struct client_context *c_ctx;
+  
     // cout << "------------- received a connection request --------------" << endl;
     printf("------------- received a connection request -------------- \n");
     createConnection(id);
-    // build_connection(id);
-    // c_ctx = (struct client_context *)malloc(sizeof(struct client_context));
-    // id->context = c_ctx;
-
-    // c_ctx->file_name[0] = '\0';
     registerMemory(id);
-    // on_pre_conn(id);
     postReceiveRequest(id);
-    // sprintf(get_local_message_region(id->context), "message from passive/server side with pid %d", getpid());
-    // memset(&cm_param, 0, sizeof(struct rdma_conn_param));
-
-    /*Connection request events give the user a newly created rdma_cm_id, similar to a
-        new socket, but the rdma_cm_id is bound to a specific RDMA device. rdma_accept is called on
-        the new rdma_cm_id*/
-    // cout << " -------------- successfullly created a connection  -------------------" << endl;
-    
     return 0;
 }
 
@@ -209,7 +186,7 @@ void clientEventLoop(struct rdma_event_channel *ec, int exit_on_disconnect){
         /*All events that are reported must be acknowledged by calling rdma_ack_cm_event. 
         rdma_cm_event is released by the rdma_ack_cm_event routine. 
         Destruction of an rdma_cm_id will block until related events have been acknowledged. */
-
+        mapping(eventCopy.event);
          if (eventCopy.event == RDMA_CM_EVENT_ADDR_RESOLVED) {
             printf("--------event: addr resolved--------\n");
             onConnectionRequest(eventCopy.id);
@@ -217,10 +194,13 @@ void clientEventLoop(struct rdma_event_channel *ec, int exit_on_disconnect){
             rdma_resolve_route(eventCopy.id, TIME_OUT_IN_MS);
             printf("-------------route resolved  -------------- \n");
         } else if(eventCopy.event == RDMA_CM_EVENT_ROUTE_RESOLVED){
-            printf("get route resolved event, calling connect \n");
+            printf("----------- get route resolved event, calling connect -------------\n");
             rdma_connect(eventCopy.id, NULL);
+            printf("-----------calling connect ------------ \n");
+        } else if(eventCopy.event == RDMA_CM_EVENT_ESTABLISHED){
+            
         } else if (eventCopy.event == RDMA_CM_EVENT_DISCONNECTED) {
-            printf("event disconnected\n");
+            printf("----------- event disconnected ---------------\n");
             rdma_destroy_qp(eventCopy.id);
             rdma_destroy_id(eventCopy.id);
 

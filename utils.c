@@ -8,16 +8,6 @@ void setQueuePairAttr(struct ibv_qp_init_attr *qp_init_attr);
 void *pollCompletionQueue(void *cq_context);
 void createStaticContext(struct rdma_cm_id *id);
 
-void build_connection(struct rdma_cm_id *id)
-{
-  struct ibv_qp_init_attr qp_attr;
-
-  createStaticContext(id);
-  setQueuePairAttr(&qp_attr);
-  rdma_create_qp(id, s_ctx->pd, &qp_attr);
-}
-
-
 void die(char *str){
     // cerr << str << endl;
     fprintf(stderr, "%s\n", str);

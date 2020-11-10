@@ -1,4 +1,3 @@
-// #include <iostream>
 #include "utils.h"
 #include <fcntl.h> 
 
@@ -6,8 +5,11 @@
 // using namespace std;
 
 const size_t BUFFER_SIZE = 10 * 1024 * 1024;
+const char *port = "10001";
 
-static struct static_context *s_ctx = NULL;
+
+
+// static struct static_context *s_ctx = NULL;
 void sendMessage(struct rdma_cm_id *id);
 void postReceiveRequest(struct rdma_cm_id *id);
 
@@ -26,7 +28,7 @@ void onCompletion(struct ibv_wc *wc){
       sendMessage(id);
 
       // don't need post_receive() since we're done with this connection
-
+       printf("file transfer finished\n");
     } else if (conn->file_name[0]) {
       ssize_t ret;
 
@@ -42,18 +44,20 @@ void onCompletion(struct ibv_wc *wc){
       conn->msg->type = MSG_READY;
       sendMessage(id);
 
-    } else {
+    } else { // first request from client(which is indicated by setting conn->file_name[0] = '0') we need to open the file
       size = (size > MAX_FILE_NAME_LENGTH) ? MAX_FILE_NAME_LENGTH : size;
       memcpy(conn->file_name, conn->buffer, size);
       conn->file_name[size - 1] = '\0';
 
       // cout << "opening file %s."<< conn->file_name << endl;
-
+      printf("file name : %s\n", conn->file_name);
+      // cout << "opening file %s."<< conn->file_name << endl;
+      printf("----------transferrig file ------------\n");
+      printf("fd : %d \n", conn->fd);
       conn->fd = open(conn->file_name, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
       if (conn->fd == -1)
         die("open() failed");
-
       postReceiveRequest(id);
 
       conn->msg->type = MSG_READY;
@@ -65,12 +69,12 @@ void onCompletion(struct ibv_wc *wc){
 
 void registerMemory(struct connection *conn){
 
+    printf("calling register memory\n");
      posix_memalign((void **)&conn->buffer, sysconf(_SC_PAGESIZE), BUFFER_SIZE);
-    conn->buffer_mr = ibv_reg_mr(s_ctx->pd, conn->buffer, BUFFER_SIZE, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    conn->buffer_mr = ibv_reg_mr(rc_get_pd(), conn->buffer, BUFFER_SIZE, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
     /*buffer memory reion is used for remote write for the peer machine*/
-
     posix_memalign((void **)&conn->msg, sysconf(_SC_PAGESIZE), sizeof(*conn->msg));
-    conn->msg_mr = ibv_reg_mr(s_ctx->pd, conn->msg, sizeof(*conn->msg), 0);
+    conn->msg_mr = ibv_reg_mr(rc_get_pd(), conn->msg, sizeof(*conn->msg), 0);
     /*mag memory region is used to store and send the message and rkey info to the remote side*/
 
 }
@@ -89,24 +93,34 @@ void postReceiveRequest(struct rdma_cm_id *id){
     // sge.addr = (uintptr_t)conn->recv_msg;
     // sge.length = sizeof(struct message);
     // sge.lkey = conn->recv_mr->lkey;
-        
+    
+    printf("--------------- calling post_recv --------------- \n");
     ibv_post_recv(id->qp, &rr, &bad_rr);
 }
 
 
 int onConnectRequest(struct rdma_cm_id *id){
     
-    struct connection *conn;
+    // struct connection *conn;
     // cout << "------------- received a connection request --------------" << endl;
-
+    printf("-------- calling onConnectRequest ----------- \n");
     createConnection(id);
+    // buildconnection(id);
+    printf("------------------ created a connection ---------------\n");
+    struct connection *ctx = (struct connection *)malloc(sizeof(struct connection));
 
-    conn = (struct connection *)calloc(1, sizeof(struct connection));
-    id->context = conn;
+    id->context = ctx;
 
-    conn->file_name[0] = '\0';
+    ctx->file_name[0] = '\0'; // take this to mean we don't have the file name
 
-    registerMemory(conn);
+  // posix_memalign((void **)&ctx->buffer, sysconf(_SC_PAGESIZE), BUFFER_SIZE);
+  // ctx->buffer_mr = ibv_reg_mr(rc_get_pd(), ctx->buffer, BUFFER_SIZE, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+
+  // posix_memalign((void **)&ctx->msg, sysconf(_SC_PAGESIZE), sizeof(*ctx->msg));
+  // ctx->msg_mr = ibv_reg_mr(rc_get_pd(), ctx->msg, sizeof(*ctx->msg), 0);
+    registerMemory(ctx);
+   // /mag memory region is
+    printf("---------------- memory registered -----------------\n");
     postReceiveRequest(id);
     // sprintf(get_local_message_region(id->context), "message from passive/server side with pid %d", getpid());
     // memset(&cm_param, 0, sizeof(struct rdma_conn_param));
@@ -116,8 +130,9 @@ int onConnectRequest(struct rdma_cm_id *id){
     return 0;
 }
 
-/*in  sendMessage, data are gathered from sge, whose address are set to conn->msg_mr, where contains rkey for the client */
+// in  sendMessage, data are gathered from sge, whose address are set to conn->msg_mr, where contains rkey for the client 
 void sendMessage(struct rdma_cm_id *id){
+    printf("calling send message\n");
     struct connection *conn = (struct connection *)id->context;
 
     struct ibv_send_wr wr, *bad_wr = NULL;
@@ -138,12 +153,12 @@ void sendMessage(struct rdma_cm_id *id){
     sge.addr = (uintptr_t)conn->msg;
     sge.length = sizeof(*conn->msg);
     sge.lkey = conn->msg_mr->lkey;
+    printf(" first time sending lkey to remote \n");
 
     ibv_post_send(id->qp, &wr, &bad_wr);
 }
 
-
-int onConnectionEstablished(struct rdma_cm_id *id)
+void onConnectionEstablished(struct rdma_cm_id *id)
 {
   struct connection *conn = (struct connection *)id->context;
 
@@ -152,7 +167,7 @@ int onConnectionEstablished(struct rdma_cm_id *id)
   /*mr_buffer are used by the peer(client) to write data, so we should send its remote key to client*/
   conn->msg->data.rkey = conn->buffer_mr->rkey;
 
-  return 0;
+  sendMessage(id);
 }
 
 static void onDisconnect(struct rdma_cm_id *id)
@@ -190,14 +205,17 @@ void serverEventLoop(struct rdma_event_channel *ec, int exit_on_disconnect){
          Destruction of an rdma_cm_id will block until related events have been acknowledged. */
 
         if (eventCopy.event == RDMA_CM_EVENT_CONNECT_REQUEST){
+                printf("----------  event: connect_requests ----------- \n ");
                 onConnectRequest(eventCopy.id);
                 /*Connection request events give the user a newly created rdma_cm_id, similar to a
                   new socket, but the rdma_cm_id is bound to a specific RDMA device. rdma_accept is called on
                   the new rdma_cm_id*/
                 rdma_accept(eventCopy.id, NULL);
+                printf("---------- accepted connection ----------- \n ");
             }
         else if (eventCopy.event == RDMA_CM_EVENT_ESTABLISHED)
-            onConnectionEstablished(eventCopy.id);
+            {printf("----------  event connection established ----------- \n ");
+            onConnectionEstablished(eventCopy.id);}
         else if (eventCopy.event == RDMA_CM_EVENT_DISCONNECTED){
             rdma_destroy_qp(eventCopy.id);
             onDisconnect(eventCopy.id);
@@ -219,12 +237,13 @@ int main(int argc, char **argv){
     uint16_t port = 0;
 
     memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
+    addr.sin_family = AF_INET6;
+    // addr.sin_port = htons(atoi(port));
 
     ec = rdma_create_event_channel();
     rdma_create_id(ec, &listener, NULL, RDMA_PS_TCP);/* RDMA_PS_TCP Provides reliable, connection-oriented QP communication.*/
     rdma_bind_addr(listener, (struct sockaddr *)&addr); /*bind cm_id to a local address, addr.sin_port is set to 0, rdma_cm will select an avaliable port*/
-    rdma_listen(listener, 10); /*10 is an arbitrary backlog value*/
+    rdma_listen(listener, 5); /*10 is an arbitrary backlog value*/
 
     port = ntohs(rdma_get_src_port(listener));
     // cout << "server listening on port : " << port << endl;
@@ -239,10 +258,5 @@ int main(int argc, char **argv){
 
     return 0;
 }
-
-
-
-
-
 
 
