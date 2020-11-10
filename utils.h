@@ -2,7 +2,7 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <iostream>
+// #include <iostream>
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,11 +16,11 @@ typedef void (*completion_fp)(struct ibv_wc *wc);
 
 void init(completion_fp);
 
-void die(std::string str);
+void die(char *str);
 void setCmParam(struct rdma_conn_param *param);
 void *pollCompletionQueue(void *cq_context);
-void createStaticContext(struct rmda_cm_id *id);
-void setQueuePairAttr(struct ibv_qp_init_attr *qp_init_attr);
+// void createStaticContext(struct rmda_cm_id *id);
+void setQueuePairAttr(struct ibv_qp_init_attr qp_init_attr);
 void createConnection(struct rdma_cm_id *id);
 
 #endif

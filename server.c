@@ -1,9 +1,11 @@
-#include <iostream>
+// #include <iostream>
 #include "utils.h"
 #include <fcntl.h> 
 
 // #define _GLIBCXX_USE_CXX11_ABI 0
-using namespace std;
+// using namespace std;
+
+const size_t BUFFER_SIZE = 10 * 1024 * 1024;
 
 static struct static_context *s_ctx = NULL;
 void sendMessage(struct rdma_cm_id *id);
@@ -28,7 +30,7 @@ void onCompletion(struct ibv_wc *wc){
     } else if (conn->file_name[0]) {
       ssize_t ret;
 
-      cout << "received %i bytes." << size << endl;
+      // cout << "received %i bytes." << size << endl;
 
       ret = write(conn->fd, conn->buffer, size);
 
@@ -45,7 +47,7 @@ void onCompletion(struct ibv_wc *wc){
       memcpy(conn->file_name, conn->buffer, size);
       conn->file_name[size - 1] = '\0';
 
-      cout << "opening file %s."<< conn->file_name << endl;
+      // cout << "opening file %s."<< conn->file_name << endl;
 
       conn->fd = open(conn->file_name, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
@@ -75,27 +77,27 @@ void registerMemory(struct connection *conn){
 
 
 void postReceiveRequest(struct rdma_cm_id *id){
-    struct ibv_recv_wr *rr, *bad_rr = NULL; 
+    struct ibv_recv_wr rr, *bad_rr = NULL; 
     // struct ibv_sge *sge
 
-    memset(rr, 0, sizeof(struct ibv_recv_wr));
-    rr->wr_id = (uintptr_t)id;
+    memset(&rr, 0, sizeof(struct ibv_recv_wr));
+    rr.wr_id = (uintptr_t)id;
     // rr->next = NULL;
-    rr->sg_list = NULL;
-    rr->num_sge = 0;
+    rr.sg_list = NULL;
+    rr.num_sge = 0;
 
     // sge.addr = (uintptr_t)conn->recv_msg;
     // sge.length = sizeof(struct message);
     // sge.lkey = conn->recv_mr->lkey;
         
-    ibv_post_recv(id->qp, rr, &bad_rr);
+    ibv_post_recv(id->qp, &rr, &bad_rr);
 }
 
 
 int onConnectRequest(struct rdma_cm_id *id){
     
     struct connection *conn;
-    cout << "------------- received a connection request --------------" << endl;
+    // cout << "------------- received a connection request --------------" << endl;
 
     createConnection(id);
 
@@ -109,7 +111,7 @@ int onConnectRequest(struct rdma_cm_id *id){
     // sprintf(get_local_message_region(id->context), "message from passive/server side with pid %d", getpid());
     // memset(&cm_param, 0, sizeof(struct rdma_conn_param));
 
-    cout << " -------------- successfullly created a connection  -------------------" << endl;
+    // cout << " -------------- successfullly created a connection  -------------------" << endl;
     
     return 0;
 }
@@ -121,9 +123,9 @@ void sendMessage(struct rdma_cm_id *id){
     struct ibv_send_wr wr, *bad_wr = NULL;
     struct ibv_sge sge;
 
-    // snprintf(conn->send_region, BUFFER_SIZE, "message from passive/server side with pid %d", getpid());
+    // snprintf(conn->send_region, RDMA_BUFFER_SIZE, "message from passive/server side with pid %d", getpid());
 
-    cout << " -------- connected, sending rkey to client ------------\n";
+    // cout << " -------- connected, sending rkey to client ------------\n";
 
     memset(&wr, 0, sizeof(wr));
 
@@ -165,7 +167,7 @@ static void onDisconnect(struct rdma_cm_id *id)
   free(conn->buffer);
   free(conn->msg);
 
-  cout << "finished transferring %s " << conn->file_name << endl;
+  // cout << "finished transferring %s " << conn->file_name << endl;
 
   free(conn);
 }
@@ -175,31 +177,31 @@ void serverEventLoop(struct rdma_event_channel *ec, int exit_on_disconnect){
     
     struct rdma_cm_event *event = NULL;
     // struct rdma_conn_param *cm_param;
-    cout << "---------- entering event loop, waiting for event ------------- " << endl;
+    // cout << "---------- entering event loop, waiting for event ------------- " << endl;
     // setCmParam(cm_param);
 
     while(rdma_get_cm_event(ec, &event) == 0){
-        struct rdma_cm_event *eventCopy;
+        struct rdma_cm_event eventCopy;
 
-        memcpy(eventCopy, event, sizeof(*event));
+        memcpy(&eventCopy, event, sizeof(*event));
         rdma_ack_cm_event(event);
         /*All events that are reported must be acknowledged by calling rdma_ack_cm_event. 
          rdma_cm_event is released by the rdma_ack_cm_event routine. 
          Destruction of an rdma_cm_id will block until related events have been acknowledged. */
 
-        if (eventCopy->event == RDMA_CM_EVENT_CONNECT_REQUEST){
-                onConnectRequest(eventCopy->id);
+        if (eventCopy.event == RDMA_CM_EVENT_CONNECT_REQUEST){
+                onConnectRequest(eventCopy.id);
                 /*Connection request events give the user a newly created rdma_cm_id, similar to a
                   new socket, but the rdma_cm_id is bound to a specific RDMA device. rdma_accept is called on
                   the new rdma_cm_id*/
-                rdma_accept(eventCopy->id, NULL);
+                rdma_accept(eventCopy.id, NULL);
             }
-        else if (eventCopy->event == RDMA_CM_EVENT_ESTABLISHED)
-            onConnectionEstablished(eventCopy->id);
-        else if (eventCopy->event == RDMA_CM_EVENT_DISCONNECTED){
-            rdma_destroy_qp(eventCopy->id);
-            onDisconnect(eventCopy->id);
-            rdma_destroy_id(eventCopy->id);
+        else if (eventCopy.event == RDMA_CM_EVENT_ESTABLISHED)
+            onConnectionEstablished(eventCopy.id);
+        else if (eventCopy.event == RDMA_CM_EVENT_DISCONNECTED){
+            rdma_destroy_qp(eventCopy.id);
+            onDisconnect(eventCopy.id);
+            rdma_destroy_id(eventCopy.id);
         }
         else 
             die("Event failure : unknown event");
@@ -208,12 +210,12 @@ void serverEventLoop(struct rdma_event_channel *ec, int exit_on_disconnect){
 }
 
 int main(int argc, char **argv){
-    
+
     init(onCompletion);
 
     struct sockaddr_in addr;
-    struct rdma_cm_id *listener = nullptr;
-    struct rdma_event_channel *ec = nullptr;
+    struct rdma_cm_id *listener = NULL;
+    struct rdma_event_channel *ec = NULL;
     uint16_t port = 0;
 
     memset(&addr, 0, sizeof(addr));
@@ -225,7 +227,8 @@ int main(int argc, char **argv){
     rdma_listen(listener, 10); /*10 is an arbitrary backlog value*/
 
     port = ntohs(rdma_get_src_port(listener));
-    cout << "server listening on port : " << port << endl;
+    // cout << "server listening on port : " << port << endl;
+    printf("server listening on port : %d\n", port);
 
     /*sit in a loop to retrieve event in the rdma event channel. 
       If no events are pending, by default, the call will block until an event is received*/ 

@@ -8,10 +8,7 @@
 #define MAX_RECV_SGE 1
 
 #define TIME_OUT_IN_MS 500
-// #define RDMA_BUFFER_SIZE = 1024;
 #define MAX_FILE_NAME_LENGTH 256
-
-const size_t BUFFER_SIZE = 10 * 1024 * 1024;
 
  enum message_type {
         MSG_MR,
@@ -41,11 +38,6 @@ struct connection {
   char file_name[MAX_FILE_NAME_LENGTH];
 };
 
-struct client_context{
-    struct connection *conn;
-    uint64_t peer_addr;
-    uint32_t peer_rkey;
-};
 
 
 struct static_context {
