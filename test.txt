@@ -1,0 +1,43 @@
+axe@node-1:~/rdma$ ls
+a.out  rdma_client.cpp  rdma.h  rdma_server.cpp  utils.cpp  utils.h
+axe@node-1:~/rdma$ git pull origin
+remote: Enumerating objects: 11, done.
+remote: Counting objects: 100% (11/11), done.
+remote: Compressing objects: 100% (6/6), done.
+remote: Total 8 (delta 2), reused 8 (delta 2), pack-reused 0
+Unpacking objects: 100% (8/8), done.
+From https://github.com/axe0227/rdma
+   bb195c4..bc690ae  master     -> origin/master
+You asked to pull from the remote 'origin', but did not specify
+a branch. Because this is not the default configured remote
+for your current branch, you must specify a branch on the command line.
+axe@node-1:~/rdma$ ls
+a.out  rdma_client.cpp  rdma.h  rdma_server.cpp  utils.cpp  utils.h
+axe@node-1:~/rdma$ git pull origin master
+From https://github.com/axe0227/rdma
+ * branch            master     -> FETCH_HEAD
+Updating bb195c4..bc690ae
+Fast-forward
+ Makefile                    |  18 ++++++++++++++++++
+ rdma_client.cpp => client.c | 125 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++---------------------------------------------------
+ rdma.h                      |   8 --------
+ rdma_server.cpp => server.c |  65 ++++++++++++++++++++++++++++++++------------------------------
+ utils.cpp => utils.c        |  62 +++++++++++++++++++++++-------------------------------------
+ utils.h                     |   8 ++++----
+ 6 files changed, 152 insertions(+), 134 deletions(-)
+ create mode 100644 Makefile
+ rename rdma_client.cpp => client.c (55%)
+ rename rdma_server.cpp => server.c (77%)
+ rename utils.cpp => utils.c (57%)
+axe@node-1:~/rdma$ ls
+a.out  client.c  Makefile  rdma.h  server.c  utils.c  utils.h
+axe@node-1:~/rdma$ ls
+a.out  client.c  Makefile  rdma.h  server.c  utils.c  utils.h
+axe@node-1:~/rdma$ make 
+cc -Wall -Werror -g   -c -o utils.o utils.c
+cc -Wall -Werror -g   -c -o client.o client.c
+gcc -o client utils.o client.o  -lrdmacm -libverbs -lpthread
+cc -Wall -Werror -g   -c -o server.o server.c
+gcc -o server utils.o server.o  -lrdmacm -libverbs -lpthread
+axe@node-1:~/rdma$ ls
+a.out  client  clie

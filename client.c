@@ -1,6 +1,8 @@
 // #include <iostream>
 #include "utils.h"
 #include <fcntl.h> 
+#include <libgen.h>
+
 
 // using namespace std;
 struct client_context{
@@ -78,6 +80,12 @@ static void onCompletion(struct ibv_wc *wc)
   struct rdma_cm_id *id = (struct rdma_cm_id *)(uintptr_t)(wc->wr_id);
   struct client_context *ctx = (struct client_context *)id->context;
   // struct connection *conn = ctx->conn;
+   printf("------------- calling onCompletion -------------- \n");
+  if(wc->status == IBV_WC_SUCCESS){
+    printf(" wc success\n");
+  }else{
+    die("status is not success\n");
+  }
 
   if (wc->opcode & IBV_WC_RECV) {
     if (ctx->msg->type == MSG_MR) {
@@ -101,6 +109,7 @@ static void onCompletion(struct ibv_wc *wc)
 
 void postReceiveRequest(struct rdma_cm_id *id){
 
+    printf("------------- calling post rr -------------- \n");
     struct client_context *c_ctx = (struct client_context *)id->context;
     // struct connection *conn = c_ctx->conn;
     struct ibv_recv_wr wr, *bad_wr = NULL;
@@ -116,11 +125,13 @@ void postReceiveRequest(struct rdma_cm_id *id){
     sge.length = sizeof(*c_ctx->msg);
     sge.lkey = c_ctx->msg_mr->lkey;
 
+    printf("------------- calling ibv_post_recv -------------- \n");
     ibv_post_recv(id->qp, &wr, &bad_wr);
+    printf("------------- posted recv ------------- \n");
 }
 
 void registerMemory(struct rdma_cm_id *id){
-
+  printf("-------------  callin register memory -------------- \n");
     struct client_context *c_ctx = (struct client_context *)id->context;
     // struct connection *conn = c_ctx->conn;
 
@@ -130,22 +141,46 @@ void registerMemory(struct rdma_cm_id *id){
     posix_memalign((void **)&c_ctx->msg, sysconf(_SC_PAGESIZE), sizeof(struct message));
     c_ctx->msg_mr = ibv_reg_mr(id->pd, c_ctx->msg, sizeof(struct message), IBV_ACCESS_LOCAL_WRITE);
 
-    postReceiveRequest(id);
+    printf("------------- memory registered -------------- \n");
+}
+
+static void post_receive(struct rdma_cm_id *id)
+{
+  struct client_context *ctx = (struct client_context *)id->context;
+
+  struct ibv_recv_wr wr, *bad_wr = NULL;
+  struct ibv_sge sge;
+
+  memset(&wr, 0, sizeof(wr));
+
+  wr.wr_id = (uintptr_t)id;
+  wr.sg_list = &sge;
+  wr.num_sge = 1;
+
+  sge.addr = (uintptr_t)ctx->msg;
+  sge.length = sizeof(*ctx->msg);
+  sge.lkey = ctx->msg_mr->lkey;
+
+  printf("------------- calling post recv -------------- \n");
+  ibv_post_recv(id->qp, &wr, &bad_wr);
+  printf("------------- returned from post_recv -------------- \n");
 }
 
 
 
 int onConnectionRequest(struct rdma_cm_id *id){
     
-    struct client_context *c_ctx;
+    // struct client_context *c_ctx;
     // cout << "------------- received a connection request --------------" << endl;
-
+    printf("------------- received a connection request -------------- \n");
     createConnection(id);
-    c_ctx = (struct client_context *)malloc(sizeof(struct client_context));
-    id->context = c_ctx;
+    // build_connection(id);
+    // c_ctx = (struct client_context *)malloc(sizeof(struct client_context));
+    // id->context = c_ctx;
 
     // c_ctx->file_name[0] = '\0';
     registerMemory(id);
+    // on_pre_conn(id);
     postReceiveRequest(id);
     // sprintf(get_local_message_region(id->context), "message from passive/server side with pid %d", getpid());
     // memset(&cm_param, 0, sizeof(struct rdma_conn_param));
@@ -159,26 +194,33 @@ int onConnectionRequest(struct rdma_cm_id *id){
 }
 
 void clientEventLoop(struct rdma_event_channel *ec, int exit_on_disconnect){
+  printf("----------- calling client event loop ----------------\n");
     struct rdma_cm_event *event = NULL;
-    struct rdma_conn_param cm_params;
+    // struct rdma_conn_param cm_params;
 
-    setCmParam(&cm_params);
+    // setCmParam(&cm_params);
 
     while(rdma_get_cm_event(ec, &event) == 0){
         struct rdma_cm_event eventCopy;
-
+        printf("got an cm event\n");
         memcpy(&eventCopy, event, sizeof(*event));
         rdma_ack_cm_event(event);
+        printf("cm event acked\n");
         /*All events that are reported must be acknowledged by calling rdma_ack_cm_event. 
         rdma_cm_event is released by the rdma_ack_cm_event routine. 
         Destruction of an rdma_cm_id will block until related events have been acknowledged. */
 
          if (eventCopy.event == RDMA_CM_EVENT_ADDR_RESOLVED) {
+            printf("--------event: addr resolved--------\n");
             onConnectionRequest(eventCopy.id);
+            printf("------------- returned from onConnection Request, calling resolve_route -------------- \n");
             rdma_resolve_route(eventCopy.id, TIME_OUT_IN_MS);
+            printf("-------------route resolved  -------------- \n");
         } else if(eventCopy.event == RDMA_CM_EVENT_ROUTE_RESOLVED){
-            rdma_connect(eventCopy.id, &cm_params);
+            printf("get route resolved event, calling connect \n");
+            rdma_connect(eventCopy.id, NULL);
         } else if (eventCopy.event == RDMA_CM_EVENT_DISCONNECTED) {
+            printf("event disconnected\n");
             rdma_destroy_qp(eventCopy.id);
             rdma_destroy_id(eventCopy.id);
 
@@ -192,21 +234,23 @@ void clientEventLoop(struct rdma_event_channel *ec, int exit_on_disconnect){
 
 int main(int argc, char **argv){
 
+    printf("calling main\n");
     struct addrinfo *addr;
     struct rdma_cm_id *id = NULL;
     struct rdma_event_channel *ec = NULL;
 
     struct client_context ctx;
     // struct connection conn;
-
+    printf("checking argc\n");
     if(argc != 4){
         // cerr <<  "usage: " << argv[0] << " <server-address> <port> <file_name> "  << endl;
+        fprintf(stderr, "usage: %s <server-address> <port> <file name> \n", argv[0]);
         exit(1);
     }
 
-    ctx.file_name = argv[3];
+    ctx.file_name = basename(argv[3]);
 
-    printf("opening file : %s", argv[3]);
+    printf("opening file: %s \n", argv[3]);
     // cout << "file name : " << fn << endl;
 
     ctx.fd = open(argv[3], O_RDONLY);
@@ -214,21 +258,27 @@ int main(int argc, char **argv){
     // cout << "---------------- successfully opened file -----------------" << endl;
     if(ctx.fd == -1){
         // cout << "unable to open file %s " << argv[2] << endl;
+        fprintf(stderr, "uable to open file\n");
         exit(1);
     }
+
+    printf("successfully opened file\n");
 
     init(onCompletion);
     getaddrinfo(argv[1], argv[2], NULL, &addr);
 
+    printf("successfully got addr info\n");
     ec = rdma_create_event_channel();
     rdma_create_id(ec, &id, NULL, RDMA_PS_TCP);
     rdma_resolve_addr(id, NULL, addr->ai_addr, TIME_OUT_IN_MS);
     /*resolves destination and optional source addresses from IP addresses to an RDMA address. 
        If successful, the specified rdma_cm_id will be bound to a local device.*/
+       printf("successfully resolved addr\n");
     freeaddrinfo(addr);    
 
     id->context = &ctx;
 
+    printf("about to enter eventloop\n");
     /*client exits on disconnnect*/
     clientEventLoop(ec, 1);
 
